@@ -1,5 +1,6 @@
 import pygame
 from .round import Round
+from .sound_feedback import SoundFeedback
 
 # Game Engine
 
@@ -26,6 +27,7 @@ class GameEngine:
         self.min_wait_ms = min_wait_ms
         self.max_wait_ms = max_wait_ms
 
+        self.sounds = SoundFeedback()
         self.round = Round(self.min_wait_ms, self.max_wait_ms)
         self.reaction_times = []
 
@@ -71,10 +73,15 @@ class GameEngine:
                 self.reaction_times.append(reaction_ms)
             if self.round.state in ("result", "false_start"):
                 self.result_shown_at = pygame.time.get_ticks()
+                if self.round.state == "false_start":
+                    self.sounds.play("false_start")
 
     def on_frame_presented(self):
         if not self.game_over:
+            first_go_frame = self.round.state == "go" and self.round.go_time is None
             self.round.mark_go_presented()
+            if first_go_frame:
+                self.sounds.play("go")
 
     def start_session(self, difficulty):
         if difficulty not in DIFFICULTIES:
@@ -123,7 +130,9 @@ class GameEngine:
 
     def _start_next_round(self):
         if len(self.reaction_times) >= self.rounds_total:
-            self.game_over = True
+            if not self.game_over:
+                self.game_over = True
+                self.sounds.play("session_end")
             return
         self.round = Round(self.min_wait_ms, self.max_wait_ms)
 
