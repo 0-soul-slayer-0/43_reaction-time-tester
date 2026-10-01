@@ -27,10 +27,21 @@ class GameEngine:
 
         self.font = pygame.font.SysFont("Arial", 30)
         self.big_font = pygame.font.SysFont("Arial", 46)
+        self.small_font = pygame.font.SysFont("Arial", 24)
         self.game_over = False
+        self.exit_requested = False
+        self.results_scroll = 0
 
     def handle_event(self, event):
         if self.game_over:
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                self.exit_requested = True
+            elif event.type == pygame.KEYDOWN and event.key == pygame.K_DOWN:
+                self._scroll_results(1)
+            elif event.type == pygame.KEYDOWN and event.key == pygame.K_UP:
+                self._scroll_results(-1)
+            elif event.type == pygame.MOUSEWHEEL:
+                self._scroll_results(-event.y)
             return
         is_click = event.type == pygame.MOUSEBUTTONDOWN
         is_space = event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE
@@ -72,6 +83,10 @@ class GameEngine:
         return round(sum(self.reaction_times) / len(self.reaction_times))
 
     def render(self, screen):
+        if self.game_over:
+            self._render_results(screen)
+            return
+
         if self.round.state == "waiting":
             bg = GRAY
             message = "Wait for green..."
@@ -103,8 +118,33 @@ class GameEngine:
         avg_text = self.font.render(f"Avg: {self.average_reaction_ms()} ms", True, WHITE)
         screen.blit(avg_text, (self.width - 190, 10))
 
-        if self.game_over and not getattr(self, "_game_over_logged", False):
-            # NOTE: no proper results screen yet - see Task 2 in the README.
-            print("Session complete! Reaction times (ms):", self.reaction_times)
-            print("Average:", self.average_reaction_ms(), "ms")
-            self._game_over_logged = True
+    def _visible_results_rows(self):
+        return max(1, (self.height - 190) // 32)
+
+    def _scroll_results(self, delta):
+        max_scroll = max(0, len(self.reaction_times) - self._visible_results_rows())
+        self.results_scroll = max(0, min(self.results_scroll + delta, max_scroll))
+
+    def _render_results(self, screen):
+        screen.fill(BLUE)
+        title = self.big_font.render("Session complete", True, WHITE)
+        screen.blit(title, title.get_rect(midtop=(self.width // 2, 18)))
+
+        visible_rows = self._visible_results_rows()
+        first = self.results_scroll
+        for row, reaction_ms in enumerate(self.reaction_times[first:first + visible_rows]):
+            result = self.small_font.render(
+                f"Round {first + row + 1}: {reaction_ms} ms", True, WHITE
+            )
+            screen.blit(result, result.get_rect(midtop=(self.width // 2, 90 + row * 32)))
+
+        average = self.font.render(
+            f"Average: {self.average_reaction_ms()} ms", True, WHITE
+        )
+        screen.blit(average, average.get_rect(midtop=(self.width // 2, self.height - 90)))
+
+        hint = "Press Esc to exit"
+        if len(self.reaction_times) > visible_rows:
+            hint = "Up/Down or scroll to view results | Esc to exit"
+        instructions = self.small_font.render(hint, True, WHITE)
+        screen.blit(instructions, instructions.get_rect(midtop=(self.width // 2, self.height - 42)))
