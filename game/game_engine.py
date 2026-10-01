@@ -8,6 +8,7 @@ BLACK = (0, 0, 0)
 GRAY = (90, 90, 90)
 GREEN = (40, 180, 90)
 BLUE = (50, 90, 170)
+RED = (180, 50, 50)
 
 class GameEngine:
     def __init__(self, width, height, rounds_total=5, min_wait_ms=1000, max_wait_ms=3000):
@@ -33,10 +34,15 @@ class GameEngine:
             return
         is_click = event.type == pygame.MOUSEBUTTONDOWN
         is_space = event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE
-        if (is_click or is_space) and self.round.state != "result":
+        if (is_click or is_space) and self.round.state in ("waiting", "go"):
             reaction_ms = self.round.register_input()
-            self.reaction_times.append(reaction_ms)
-            self.result_shown_at = pygame.time.get_ticks()
+            if reaction_ms is not None:
+                self.reaction_times.append(reaction_ms)
+            if self.round.state in ("result", "false_start"):
+                self.result_shown_at = pygame.time.get_ticks()
+
+    def on_frame_presented(self):
+        self.round.mark_go_presented()
 
     def handle_input(self):
         # Reserved for continuously-held-key input; every action here
@@ -49,7 +55,7 @@ class GameEngine:
 
         self.round.update()
 
-        if self.round.state == "result":
+        if self.round.state in ("result", "false_start"):
             now = pygame.time.get_ticks()
             if now - self.result_shown_at >= self.result_pause_ms:
                 self._start_next_round()
@@ -72,6 +78,9 @@ class GameEngine:
         elif self.round.state == "go":
             bg = GREEN
             message = "Click now!"
+        elif self.round.state == "false_start":
+            bg = RED
+            message = "False start! Try again."
         else:
             bg = BLUE
             message = f"{self.round.reaction_ms} ms"
@@ -82,7 +91,12 @@ class GameEngine:
         text_rect = text_surf.get_rect(center=(self.width // 2, self.height // 2))
         screen.blit(text_surf, text_rect)
 
-        round_num = min(len(self.reaction_times) + 1, self.rounds_total)
+        # A valid result belongs to the round just completed; retries stay
+        # on the next uncompleted round without increasing the count.
+        round_num = len(self.reaction_times)
+        if self.round.state != "result":
+            round_num += 1
+        round_num = min(round_num, self.rounds_total)
         round_text = self.font.render(f"Round {round_num}/{self.rounds_total}", True, WHITE)
         screen.blit(round_text, (10, 10))
 

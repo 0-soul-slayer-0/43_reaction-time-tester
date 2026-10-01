@@ -29,6 +29,7 @@ def main():
         engine.render(SCREEN)
 
         pygame.display.flip()
+        engine.on_frame_presented()
         clock.tick(FPS)
 
     pygame.quit()
