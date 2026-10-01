@@ -10,6 +10,13 @@ GREEN = (40, 180, 90)
 BLUE = (50, 90, 170)
 RED = (180, 50, 50)
 
+# Each preset defines (valid rounds, minimum wait ms, maximum wait ms).
+DIFFICULTIES = {
+    "Easy": (3, 1000, 2000),
+    "Medium": (5, 1000, 3000),
+    "Hard": (10, 500, 5000),
+}
+
 class GameEngine:
     def __init__(self, width, height, rounds_total=5, min_wait_ms=1000, max_wait_ms=3000):
         self.width = width
@@ -31,17 +38,30 @@ class GameEngine:
         self.game_over = False
         self.exit_requested = False
         self.results_scroll = 0
+        self.replay_menu = False
+        self.difficulty = None
 
     def handle_event(self, event):
         if self.game_over:
+            if self.replay_menu:
+                self._handle_replay_menu(event)
+                return
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 self.exit_requested = True
+            elif event.type == pygame.KEYDOWN and event.key == pygame.K_r:
+                self.replay_menu = True
             elif event.type == pygame.KEYDOWN and event.key == pygame.K_DOWN:
                 self._scroll_results(1)
             elif event.type == pygame.KEYDOWN and event.key == pygame.K_UP:
                 self._scroll_results(-1)
             elif event.type == pygame.MOUSEWHEEL:
                 self._scroll_results(-event.y)
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                replay, exit_button = self._results_buttons()
+                if replay.collidepoint(event.pos):
+                    self.replay_menu = True
+                elif exit_button.collidepoint(event.pos):
+                    self.exit_requested = True
             return
         is_click = event.type == pygame.MOUSEBUTTONDOWN
         is_space = event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE
@@ -53,7 +73,37 @@ class GameEngine:
                 self.result_shown_at = pygame.time.get_ticks()
 
     def on_frame_presented(self):
-        self.round.mark_go_presented()
+        if not self.game_over:
+            self.round.mark_go_presented()
+
+    def start_session(self, difficulty):
+        if difficulty not in DIFFICULTIES:
+            raise ValueError(f"Unknown difficulty: {difficulty}")
+        self.rounds_total, self.min_wait_ms, self.max_wait_ms = DIFFICULTIES[difficulty]
+        self.difficulty = difficulty
+        self.reaction_times = []
+        self.result_shown_at = None
+        self.results_scroll = 0
+        self.exit_requested = False
+        self.game_over = False
+        self.replay_menu = False
+        self.round = Round(self.min_wait_ms, self.max_wait_ms)
+
+    def _handle_replay_menu(self, event):
+        if event.type == pygame.KEYDOWN:
+            choices = {pygame.K_1: "Easy", pygame.K_2: "Medium", pygame.K_3: "Hard"}
+            if event.key in choices:
+                self.start_session(choices[event.key])
+            elif event.key == pygame.K_ESCAPE:
+                self.exit_requested = True
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            for label, rect in self._replay_buttons():
+                if rect.collidepoint(event.pos):
+                    if label == "Exit":
+                        self.exit_requested = True
+                    else:
+                        self.start_session(label)
+                    return
 
     def handle_input(self):
         # Reserved for continuously-held-key input; every action here
@@ -84,7 +134,10 @@ class GameEngine:
 
     def render(self, screen):
         if self.game_over:
-            self._render_results(screen)
+            if self.replay_menu:
+                self._render_replay_menu(screen)
+            else:
+                self._render_results(screen)
             return
 
         if self.round.state == "waiting":
@@ -119,7 +172,7 @@ class GameEngine:
         screen.blit(avg_text, (self.width - 190, 10))
 
     def _visible_results_rows(self):
-        return max(1, (self.height - 190) // 32)
+        return max(1, (self.height - 215) // 32)
 
     def _scroll_results(self, delta):
         max_scroll = max(0, len(self.reaction_times) - self._visible_results_rows())
@@ -141,10 +194,40 @@ class GameEngine:
         average = self.font.render(
             f"Average: {self.average_reaction_ms()} ms", True, WHITE
         )
-        screen.blit(average, average.get_rect(midtop=(self.width // 2, self.height - 90)))
+        screen.blit(average, average.get_rect(midtop=(self.width // 2, self.height - 120)))
 
-        hint = "Press Esc to exit"
         if len(self.reaction_times) > visible_rows:
-            hint = "Up/Down or scroll to view results | Esc to exit"
-        instructions = self.small_font.render(hint, True, WHITE)
-        screen.blit(instructions, instructions.get_rect(midtop=(self.width // 2, self.height - 42)))
+            instructions = self.small_font.render("Up/Down or scroll to view all rounds", True, WHITE)
+            screen.blit(instructions, instructions.get_rect(midtop=(self.width // 2, self.height - 80)))
+        replay, exit_button = self._results_buttons()
+        self._draw_button(screen, replay, "Play again (R)")
+        self._draw_button(screen, exit_button, "Exit (Esc)")
+
+    def _results_buttons(self):
+        width = (self.width - 100) // 2
+        return (pygame.Rect(40, self.height - 48, width, 38),
+                pygame.Rect(60 + width, self.height - 48, width, 38))
+
+    def _replay_buttons(self):
+        buttons = [(name, pygame.Rect(50, 92 + index * 70, self.width - 100, 52))
+                   for index, name in enumerate(DIFFICULTIES)]
+        buttons.append(("Exit", pygame.Rect(50, 302, self.width - 100, 44)))
+        return buttons
+
+    def _draw_button(self, screen, rect, label):
+        pygame.draw.rect(screen, GRAY, rect, border_radius=8)
+        text = self.small_font.render(label, True, WHITE)
+        screen.blit(text, text.get_rect(center=rect.center))
+
+    def _render_replay_menu(self, screen):
+        screen.fill(BLUE)
+        title = self.big_font.render("Play again", True, WHITE)
+        screen.blit(title, title.get_rect(midtop=(self.width // 2, 18)))
+        for index, (name, rect) in enumerate(self._replay_buttons(), 1):
+            label = "Exit (Esc)"
+            if name in DIFFICULTIES:
+                rounds, minimum, maximum = DIFFICULTIES[name]
+                label = f"{index}. {name} ({rounds} rounds, wait {minimum / 1000:g}-{maximum / 1000:g} s)"
+            self._draw_button(screen, rect, label)
+        hint = self.small_font.render("Click a choice or press 1, 2, or 3", True, WHITE)
+        screen.blit(hint, hint.get_rect(midtop=(self.width // 2, self.height - 42)))

@@ -40,14 +40,15 @@ class ResultsTests(unittest.TestCase):
         for index, time in enumerate(engine.reaction_times, 1):
             self.assertIn(f"Round {index}: {time} ms", text)
         self.assertIn("Average: 240 ms", text)
-        self.assertIn("Press Esc to exit", text)
+        self.assertIn("Play again (R)", text)
+        self.assertIn("Exit (Esc)", text)
         self.assertNotIn("Wait for green...", text)
 
     def test_final_screen_stays_until_exit_input(self):
         engine = self.completed_engine()
         round_ = engine.round
         for event in [pygame.event.Event(pygame.KEYDOWN, key=pygame.K_SPACE),
-                      pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1)]:
+                      pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=(0, 0))]:
             engine.handle_event(event)
         with patch("pygame.time.get_ticks", return_value=100000):
             engine.update()
